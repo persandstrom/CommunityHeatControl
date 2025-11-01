@@ -6,6 +6,20 @@ import machine
 
 from pump import Pump
 
+def format_uptime(seconds):
+    SECS_PER_MIN = 60
+    SECS_PER_HOUR = 3600
+    SECS_PER_DAY = 86400
+    
+    days = seconds / SECS_PER_DAY
+    seconds %= SECS_PER_DAY
+    hours = seconds // SECS_PER_HOUR
+    seconds %= SECS_PER_HOUR
+    minutes = seconds // SECS_PER_MIN
+    seconds %= SECS_PER_MIN
+    
+    return f"{days:.0f}d {hours:.0f}h {minutes:.0f}m {seconds:.0f}s"
+
 class HTTPView:
     def __init__(self, sta_if, ap, regulator, pump, mqtt, valve):
         self._sensors = []
@@ -39,7 +53,7 @@ class HTTPView:
                 # Handle AJAX status request
                 if "GET /status" in request:
                     status = {
-                        "uptime": int(time.ticks_ms() / 1000),
+                        "uptime": format_uptime(int(time.ticks_ms() / 1000)),
                         "sta_if": self._sta_if.isconnected(),
                         "ap": self._ap.isconnected(),
                         "regulator_mode": self.regulator.mode,
@@ -113,8 +127,8 @@ class HTTPView:
                                         </span>
                                     </td>
                                 </tr>
-                                <tr><td>STA_IF</td><td id="sta_if">...</td></tr>
-                                <tr><td>AP</td><td id="ap">...</td></tr>
+                                <tr><td>Station</td><td id="sta_if">...</td></tr>
+                                <tr><td>Access Point</td><td id="ap">...</td></tr>
                                 <tr><td>Regulator Mode</td><td id="regulator_mode">...</td></tr>
                                 <tr>
                                     <td>Pump</td>
@@ -156,7 +170,7 @@ class HTTPView:
                             fetch('/status')
                                 .then(resp => resp.json())
                                 .then(data => {
-                                    document.getElementById('uptime').textContent = data.uptime + 's';
+                                    document.getElementById('uptime').textContent = data.uptime;
                                     document.getElementById('sta_if').innerHTML = data.sta_if
                                         ? '<span class="status-dot dot-on"></span>Connected'
                                         : '<span class="status-dot dot-off"></span>Disconnected';
