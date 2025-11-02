@@ -40,8 +40,6 @@ while not sta_if.isconnected():
 print(f"Network connected {sta_if.isconnected()}")
 print(f"IP: {sta_if.ipconfig('addr4')}")
 
-
-
 ## Set up MQTT Client
 mqtt = MQTTClient(
     client_id=settings["mqtt"]["client_id"],
@@ -79,8 +77,7 @@ pin_close_valve = Pin(18, Pin.OUT, value=1)
 valve = Valve(
     pin_open_valve,
     pin_close_valve)
-
-# valve.full_close()
+valve.full_close()
 
 regulator = Regulator(
     community_in_temp=community_in_temp,
@@ -88,8 +85,6 @@ regulator = Regulator(
     outdoor_temp=outdoor_temp,
     valve=valve,
     pump=pump)
-
-
 
 # Set up MQTT Controller
 mqtt = MQTTController(
@@ -112,7 +107,8 @@ http_v = HTTPView(
     regulator=regulator,
     pump=pump,
     mqtt=mqtt,
-    valve=valve)
+    valve=valve, 
+    port=settings["web_server"]["port"])
 http_v.add_sensor(outdoor_temp)
 http_v.add_sensor(community_in_temp)
 http_v.add_sensor(community_out_temp)

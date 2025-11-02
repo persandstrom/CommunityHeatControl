@@ -1,6 +1,5 @@
 import requests
-import json
-import socket
+
 
 SHELLY_IP = "192.168.4.2"
 
@@ -58,8 +57,6 @@ class Pump:
         self._refresh()
 
     def _refresh(self):
-
-        print(f"state {self.status} wanted state {self.wanted_state}")
         if self.wanted_state != Pump.UNKNOWN and self.wanted_state != self.status:
             set_shelly_power(self.wanted_state == Pump.ON)
 

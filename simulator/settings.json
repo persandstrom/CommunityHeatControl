@@ -1,0 +1,19 @@
+{
+    "station": {
+        "ssid" : "",
+        "password" : ""
+    },
+    "access_point": {
+        "ssid": "",
+        "password": ""
+    },
+    "mqtt": {
+        "client_id": "",
+        "broker": "",
+        "user": "",
+        "password": ""
+    },
+    "web_server": {
+        "port": 9090
+    }
+}
