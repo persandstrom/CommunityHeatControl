@@ -28,7 +28,18 @@ class TempSensorArray():
             self._ds_array.append(ds_array)
             self._roms_array.append(ds_array.scan())
 
-        self.temperatures = [25]*sum(len(roms) for roms in self._roms_array)
+        self.temperatures = [
+            999,
+            999,
+            999,
+            999,
+            999,
+            999,
+            999,
+            999
+            ]
+        
+        #[25]*sum(len(roms) for roms in self._roms_array)
 
         _thread.start_new_thread(self._scan, ())
 

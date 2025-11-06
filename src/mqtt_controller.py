@@ -24,7 +24,6 @@ class MQTTController:
     def execute(self):
         if not self.connected:
             self.led.on()
-            self.connect()
             return
 
         try:
@@ -37,9 +36,10 @@ class MQTTController:
                 self.client.publish(topic, payload)
             # Read
             self.client.check_msg()
-        except:
-            print("MQTT failure {e}, disconnecting")
+        except Exception as e:
+            print(f"MQTT failure {e}, disconnecting")
             self.client.disconnect()
+            self.connected = False
         self.led.switch()
 
 

@@ -2,7 +2,6 @@ import socket
 import _thread
 import time
 import json
-import traceback
 import machine
 
 from pump import Pump
@@ -53,28 +52,43 @@ class HTTPView:
             try:
                 cl, addr = s.accept()
                 request = cl.recv(1024).decode()
+
                 # Handle AJAX status request
                 if "GET /status" in request:
-                    status = {
-                        "uptime": format_uptime(int(time.ticks_ms() / 1000)),
-                        "sta_if": self._sta_if.isconnected(),
-                        "ap": self._ap.isconnected(),
-                        "regulator_mode": self.regulator.mode,
-                        "pump": self.pump.status == Pump.ON,
-                        "valve_adjusting": self.valve.adjusting,
-                        "valve_opening": self.valve.opening,
-                        "valve_closing": self.valve.closing,
-                        "valve_position": self.valve.position,
-                        "mqtt": self.mqtt.connected,
-                        "sensors": [
-                            {"name": sensor.name(), "value": sensor.value()}
-                            for sensor in self._sensors
-                        ]
-                    }
-                    content = json.dumps(status)
-                    cl.send(b'HTTP/1.0 200 OK\r\nContent-Type: application/json\r\n\r\n')
-                    cl.send(bytes(content, 'utf-8'))
-                    cl.close()
+                    try:
+                        # Safely get sensor data
+                        sensors_data = []
+                        for sensor in self._sensors:
+                            try:
+                                sensor_info = {"name": sensor.name(), "value": sensor.value() or 0}
+                                sensors_data.append(sensor_info)
+                            except Exception as e:
+                                print(f"Error reading sensor: {e}")
+                                sensors_data.append({"name": "unknown", "value": 0})
+                        
+                        status = {
+                            "uptime": format_uptime(int(time.ticks_ms() / 1000)),
+                            "sta_if": self._sta_if.isconnected(),
+                            "ap": self._ap.active(),
+                            "regulator_mode": getattr(self.regulator, 'mode', 'unknown'),
+                            "pump": self.pump.status,  # Send the actual status string
+                            "valve_adjusting": getattr(self.valve, 'adjusting', 0),
+                            "valve_opening": getattr(self.valve, 'opening', False),
+                            "valve_closing": getattr(self.valve, 'closing', False),
+                            "valve_position": getattr(self.valve, 'position', 0),
+                            "mqtt": getattr(self.mqtt, 'connected', False),
+                            "sensors": sensors_data
+                        }
+                        content = json.dumps(status)
+                        cl.send(b'HTTP/1.0 200 OK\r\nContent-Type: application/json\r\n\r\n')
+                        cl.send(content.encode('utf-8'))
+                        cl.close()
+                        continue
+                    except Exception as e:
+                        print(f"Error in status endpoint: {e}")
+                        cl.send(b'HTTP/1.0 500 Internal Server Error\r\n\r\n')
+                        cl.close()
+                        continue
                     continue
 
                 # Parse control requests
@@ -94,284 +108,110 @@ class HTTPView:
                     machine.reset()
 
                 # Build main page
-                html = """
-                <html>
-                <head>
-                    <title>Community Heating System</title>
-                    <meta name="viewport" content="width=device-width, initial-scale=1">
-                    <style>
-                        * { box-sizing: border-box; }
-                        body { 
-                            font-family: 'Segoe UI', Arial, sans-serif; 
-                            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
-                            margin: 0; 
-                            min-height: 100vh;
-                        }
-                        .container { max-width: 1200px; margin: 20px auto; padding: 0 20px; }
-                        .header { text-align: center; color: white; margin-bottom: 30px; }
-                        .header h1 { font-size: 2.5em; margin: 0; text-shadow: 2px 2px 4px rgba(0,0,0,0.3); }
-                        .header .subtitle { opacity: 0.9; margin-top: 10px; font-size: 1.1em; }
-                        
-                        .grid { display: flex; flex-direction: column; gap: 20px; }
-                        .card { 
-                            background: rgba(255,255,255,0.95); 
-                            border-radius: 15px; 
-                            box-shadow: 0 8px 32px rgba(0,0,0,0.1); 
-                            padding: 25px; 
-                            backdrop-filter: blur(10px);
-                            border: 1px solid rgba(255,255,255,0.2);
-                        }
-                        .card h2 { margin-top: 0; color: #333; font-size: 1.4em; border-bottom: 2px solid #eee; padding-bottom: 10px; }
-                        
-                        .status-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
-                        .status-item { 
-                            background: #f8f9fa; 
-                            padding: 15px; 
-                            border-radius: 10px; 
-                            border-left: 4px solid #ddd;
-                            transition: all 0.3s ease;
-                        }
-                        .status-item.online { border-left-color: #4caf50; }
-                        .status-item.offline { border-left-color: #f44336; }
-                        .status-item.warning { border-left-color: #ff9800; }
-                        
-                        .status-label { font-size: 0.9em; color: #666; margin-bottom: 5px; }
-                        .status-value { font-size: 1.1em; font-weight: 600; display: flex; flex-direction: column; }
-                        .status-value > div { margin: 2px 0; display: flex; align-items: center; }
-                        
-                        .actions { margin-top: 10px; }
-                        .actions button { 
-                            padding: 8px 16px; 
-                            border: none; 
-                            border-radius: 20px; 
-                            margin: 2px; 
-                            cursor: pointer; 
-                            font-weight: 500;
-                            transition: all 0.3s ease;
-                            font-size: 0.9em;
-                        }
-                        .actions button:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
-                        .actions .on { background: #4caf50; color: white; }
-                        .actions .off { background: #f44336; color: white; }
-                        .actions .open { background: #2196f3; color: white; }
-                        .actions .close { background: #ff9800; color: white; }
-                        .actions .auto { background: #9c27b0; color: white; }
-                        .actions .manual { background: #607d8b; color: white; }
-                        .actions .reset { background: #e91e63; color: white; }
-                        
-                        .sensor-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; }
-                        .sensor-card {
-                            background: linear-gradient(135deg, #667eea, #764ba2);
-                            color: white;
-                            padding: 20px;
-                            border-radius: 12px;
-                            text-align: center;
-                            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
-                        }
-                        .sensor-name { font-size: 0.9em; opacity: 0.9; margin-bottom: 5px; }
-                        .sensor-value { font-size: 1.8em; font-weight: 600; }
-                        .sensor-unit { font-size: 0.8em; opacity: 0.8; }
-                        
-                        .valve-display {
-                            background: #f8f9fa;
-                            padding: 15px;
-                            border-radius: 10px;
-                            text-align: center;
-                            margin: 10px 0;
-                        }
-                        .valve-bar {
-                            width: 100%;
-                            height: 20px;
-                            background: #e0e0e0;
-                            border-radius: 10px;
-                            overflow: hidden;
-                            margin: 10px 0;
-                        }
-                        .valve-fill {
-                            height: 100%;
-                            background: linear-gradient(90deg, #4caf50, #2196f3);
-                            border-radius: 10px;
-                            transition: width 0.3s ease;
-                        }
-                        
-                        @media (max-width: 768px) {
-                            .status-grid { grid-template-columns: 1fr; }
-                            .sensor-grid { grid-template-columns: 1fr 1fr; }
-                        }
-                    </style>
-                </head>
-                <body>
-                    <div class="container">
-                        <div class="header">
-                            <h1>Community Heating Control</h1>
-                            <div class="subtitle">Real-time monitoring and control system</div>
-                        </div>
-                        
-                        <div class="grid">
-                            <div class="card">
-                                <h2>System Status</h2>
-                                <div class="status-grid">
-                                    <div class="status-item" id="uptime-card">
-                                        <div class="status-label">System Uptime</div>
-                                        <div class="status-value" id="uptime">...</div>
-                                        <div class="actions">
-                                            <button class="reset" onclick="sendAction('reset')">RESTART</button>
-                                        </div>
-                                    </div>
-                                    
-                                    <div class="status-item" id="network-card">
-                                        <div class="status-label">Network Status</div>
-                                        <div class="status-value">
-                                            <div id="sta_if" style="margin-bottom: 8px;">...</div>
-                                            <div id="ap">...</div>
-                                        </div>
-                                    </div>
-                                    
-                                    <div class="status-item" id="regulator-card">
-                                        <div class="status-label">Regulator Mode</div>
-                                        <div class="status-value" id="regulator_mode">...</div>
-                                        <div class="actions">
-                                            <button class="auto" onclick="sendAction('regulator', 'auto')">AUTO</button>
-                                            <button class="manual" onclick="sendAction('regulator', 'manual')">MANUAL</button>
-                                        </div>
-                                    </div>
-                                    
-                                    <div class="status-item" id="mqtt-card">
-                                        <div class="status-label">MQTT Connection</div>
-                                        <div class="status-value" id="mqtt_status">...</div>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <div class="card">
-                                <h2>Equipment Control</h2>
-                                <div class="status-grid">
-                                    <div class="status-item" id="pump-card">
-                                        <div class="status-label">Heat Pump</div>
-                                        <div class="status-value" id="pump_status">...</div>
-                                        <div class="actions">
-                                            <button class="on" onclick="sendAction('pump', 'on')">START</button>
-                                            <button class="off" onclick="sendAction('pump', 'off')">STOP</button>
-                                        </div>
-                                    </div>
-                                    
-                                    <div class="status-item" style="grid-column: span 2;" id="valve-card">
-                                        <div class="status-label">Control Valve</div>
-                                        <div class="status-value" id="valve_status">...</div>
-                                        <div class="valve-display">
-                                            <div>Position: <span id="valve_position">0</span>/150</div>
-                                            <div class="valve-bar">
-                                                <div class="valve-fill" id="valve_fill" style="width: 0%"></div>
-                                            </div>
-                                        </div>
-                                        <div class="actions">
-                                            <button class="open" onclick="sendAction('valve', 'open')">OPEN</button>
-                                            <button class="close" onclick="sendAction('valve', 'close')">CLOSE</button>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <div class="card">
-                                <h2>Temperature Sensors</h2>
-                                <div class="sensor-grid" id="sensor_grid">
-                                    <!-- Sensors will be populated here -->
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <script>
-                        function sendAction(device, state) {
-                            fetch('/' + device + '?state=' + state)
-                                .then(() => setTimeout(updateStatus, 500));
-                        }
-                        
-                        function updateStatus() {
-                            fetch('/status')
-                                .then(resp => resp.json())
-                                .then(data => {
-                                    // Update uptime
-                                    document.getElementById('uptime').textContent = data.uptime;
-                                    
-                                    // Update network status
-                                    document.getElementById('sta_if').innerHTML = data.sta_if
-                                        ? 'WiFi Connected'
-                                        : 'WiFi Disconnected';
-                                    document.getElementById('ap').innerHTML = data.ap
-                                        ? 'AP Active'
-                                        : 'AP Inactive';
-                                    
-                                    // Update regulator mode with styling
-                                    const regulatorCard = document.getElementById('regulator-card');
-                                    document.getElementById('regulator_mode').textContent = data.regulator_mode.toUpperCase();
-                                    regulatorCard.className = data.regulator_mode === 'automatic' ? 'status-item online' : 'status-item warning';
-                                    
-                                    // Update pump status
-                                    const pumpCard = document.getElementById('pump-card');
-                                    document.getElementById('pump_status').innerHTML = data.pump
-                                        ? 'RUNNING'
-                                        : 'STOPPED';
-                                    pumpCard.className = data.pump ? 'status-item online' : 'status-item offline';
-                                    
-                                    // Update valve status with improved display
-                                    const valveCard = document.getElementById('valve-card');
-                                    let valveStatus = '';
-                                    if (data.valve_adjusting > 0) {
-                                        if (data.valve_opening) {
-                                            valveStatus = 'OPENING (' + data.valve_adjusting + 's)';
-                                            valveCard.className = 'status-item warning';
-                                        } else if (data.valve_closing) {
-                                            valveStatus = 'CLOSING (' + data.valve_adjusting + 's)';
-                                            valveCard.className = 'status-item warning';
-                                        }
-                                    } else {
-                                        valveStatus = 'IDLE';
-                                        valveCard.className = 'status-item online';
-                                    }
-                                    document.getElementById('valve_status').innerHTML = valveStatus;
-                                    
-                                    // Update valve position and bar
-                                    const position = data.valve_position || 0;
-                                    document.getElementById('valve_position').textContent = position;
-                                    const percentage = (position / 150) * 100;
-                                    document.getElementById('valve_fill').style.width = percentage + '%';
-                                    
-                                    // Update MQTT status
-                                    const mqttCard = document.getElementById('mqtt-card');
-                                    document.getElementById('mqtt_status').innerHTML = data.mqtt
-                                        ? 'Connected'
-                                        : 'Disconnected';
-                                    mqttCard.className = data.mqtt ? 'status-item online' : 'status-item offline';
-                                    
-                                    // Update sensors with new card layout
-                                    let sensorHtml = '';
-                                    for (const sensor of data.sensors) {
-                                        const temp = sensor.value || 0;
-                                        const displayName = sensor.name.replace(/_/g, ' ').replace(/temp/g, '').trim();
-                                        sensorHtml += `
-                                            <div class="sensor-card">
-                                                <div class="sensor-name">${displayName}</div>
-                                                <div class="sensor-value">${temp.toFixed(1)}<span class="sensor-unit">&deg;C</span></div>
-                                            </div>
-                                        `;
-                                    }
-                                    document.getElementById('sensor_grid').innerHTML = sensorHtml;
-                                })
-                                .catch(err => {
-                                    console.error('Failed to update status:', err);
-                                });
-                        }
-                        
-                        // Update every second
-                        setInterval(updateStatus, 1000);
-                        // Initial update
-                        updateStatus();
-                    </script>
-                </body>
-                </html>
-                """
-                cl.send(b'HTTP/1.0 200 OK\r\nContent-type: text/html\r\n\r\n')
-                cl.send(bytes(html, 'utf-8'))
+                # Build main page
+                html = """<!DOCTYPE html>
+<html>
+<head>
+<title>Heating Control</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+body{font-family:Arial;margin:0;background:#f5f5f5}
+.container{max-width:800px;margin:10px auto;padding:10px}
+.card{background:#fff;border-radius:8px;padding:15px;margin:10px 0;box-shadow:0 2px 5px rgba(0,0,0,0.1)}
+h1,h2{margin:0 0 10px 0;color:#333}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.item{background:#f8f9fa;padding:10px;border-radius:5px;border-left:3px solid #ddd}
+.online{border-left-color:#4caf50}
+.offline{border-left-color:#f44336}
+.warning{border-left-color:#ff9800}
+.label{font-size:12px;color:#666;margin-bottom:3px}
+.value{font-weight:bold}
+button{padding:5px 10px;border:none;border-radius:3px;margin:2px;cursor:pointer;font-size:12px}
+.on{background:#4caf50;color:white}
+.off{background:#f44336;color:white}
+.auto{background:#9c27b0;color:white}
+.manual{background:#607d8b;color:white}
+.open{background:#2196f3;color:white}
+.close{background:#ff9800;color:white}
+.reset{background:#e91e63;color:white}
+.sensors{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px}
+.sensor{background:#667eea;color:white;padding:15px;border-radius:5px;text-align:center}
+.temp{font-size:18px;font-weight:bold}
+.valve-bar{width:100%;height:15px;background:#eee;border-radius:7px;overflow:hidden;margin:5px 0}
+.valve-fill{height:100%;background:#4caf50;transition:width 0.3s}
+@media(max-width:600px){.grid{grid-template-columns:1fr}.sensors{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>Heating Control</h1>
+
+<div class="card">
+<h2>System</h2>
+<div class="grid">
+<div class="item"><div class="label">Uptime</div><div class="value" id="uptime">...</div>
+<button class="reset" onclick="sendAction('reset')">RESTART</button></div>
+<div class="item" id="net"><div class="label">Network</div><div class="value" id="network">...</div></div>
+<div class="item" id="reg"><div class="label">Mode</div><div class="value" id="mode">...</div>
+<button class="auto" onclick="sendAction('regulator','auto')">AUTO</button>
+<button class="manual" onclick="sendAction('regulator','manual')">MANUAL</button></div>
+<div class="item" id="mqtt"><div class="label">MQTT</div><div class="value" id="mqttstat">...</div></div>
+</div>
+</div>
+
+<div class="card">
+<h2>Equipment</h2>
+<div class="grid">
+<div class="item" id="pump"><div class="label">Pump</div><div class="value" id="pumpstat">...</div>
+<button class="on" onclick="sendAction('pump','on')">START</button>
+<button class="off" onclick="sendAction('pump','off')">STOP</button></div>
+<div class="item" id="valve"><div class="label">Valve</div><div class="value" id="valvestat">...</div>
+<div>Position: <span id="pos">0</span>/150</div>
+<div class="valve-bar"><div class="valve-fill" id="fill"></div></div>
+<button class="open" onclick="sendAction('valve','open')">OPEN</button>
+<button class="close" onclick="sendAction('valve','close')">CLOSE</button></div>
+</div>
+</div>
+
+<div class="card">
+<h2>Sensors</h2>
+<div class="sensors" id="sensors"></div>
+</div>
+
+</div>
+<script>
+function sendAction(d,s){fetch('/'+d+'?state='+s).then(()=>setTimeout(update,500))}
+function update(){
+fetch('/status').then(r=>r.json()).then(d=>{
+document.getElementById('uptime').textContent=d.uptime;
+document.getElementById('network').innerHTML=(d.sta_if?'WiFi OK':'WiFi OFF')+'<br>'+(d.ap?'AP ON':'AP OFF');
+document.getElementById('mode').textContent=d.regulator_mode.toUpperCase();
+document.getElementById('reg').className=d.regulator_mode==='automatic'?'item online':'item warning';
+document.getElementById('mqttstat').textContent=d.mqtt?'Connected':'Disconnected';
+document.getElementById('mqtt').className=d.mqtt?'item online':'item offline';
+document.getElementById('pumpstat').textContent=d.pump==='on'?'RUNNING':d.pump==='off'?'STOPPED':'UNKNOWN';
+document.getElementById('pump').className=d.pump==='on'?'item online':d.pump==='off'?'item offline':'item warning';
+let vs='IDLE';
+if(d.valve_adjusting>0){
+vs=d.valve_opening?'OPENING ('+d.valve_adjusting+'s)':'CLOSING ('+d.valve_adjusting+'s)';
+document.getElementById('valve').className='item warning';
+}else{document.getElementById('valve').className='item online'}
+document.getElementById('valvestat').textContent=vs;
+document.getElementById('pos').textContent=d.valve_position||0;
+document.getElementById('fill').style.width=((d.valve_position||0)/150*100)+'%';
+let sh='';
+for(let s of d.sensors){
+let n=s.name.replace(/_/g,' ').replace(/temp/g,'').trim();
+sh+='<div class="sensor"><div>'+n+'</div><div class="temp">'+s.value.toFixed(1)+'&deg;C</div></div>';
+}
+document.getElementById('sensors').innerHTML=sh;
+}).catch(e=>console.error(e))}
+setInterval(update,2000);update();
+</script>
+</body>
+</html>"""
+                cl.send('HTTP/1.0 200 OK\r\nContent-type: text/html\r\n\r\n')
+                cl.send(html)
                 cl.close()
             except Exception as e:
-                print("Error:", e, traceback.format_exc())
+                print("HTTP Error:", e)

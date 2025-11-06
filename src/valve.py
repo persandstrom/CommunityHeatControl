@@ -31,7 +31,7 @@ class Valve:
     def full_close(self):
         self.opening = False
         self.closing = True
-        self.adjusting = 10
+        self.adjusting = 150
 
     def open(self, duration=3):
         if self.adjusting or self.position >= 150:

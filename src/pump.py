@@ -44,16 +44,30 @@ def set_shelly_power(on):
 
 
 class Pump:
-    def __init__(self, led):
+    def __init__(self, led, access_point):
         self.status = Pump.UNKNOWN
         self.wanted_state = Pump.UNKNOWN
         self.power = None
         self.led = led
         self.refreshing = False
+        self.access_point = access_point
+    
+    # Check if Shelly is connected to your AP
+    def is_shelly_connected_to_ap(self):
+        try:
+            stations = self.access_point.status('stations')
+            return len(stations) > 0
+        except:
+            return False
 
     def refresh(self):
         if self.refreshing:
             return # Do not refresh if already ongoing
+        if not self.is_shelly_connected_to_ap():
+            self.status = Pump.UNKNOWN
+            self.power = None
+            self.led.on()
+            return
         self._refresh()
 
     def _refresh(self):
