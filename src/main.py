@@ -9,7 +9,7 @@ from machine import Pin
 
 from umqtt.simple import MQTTClient
 
-from temp_sensor import TempSensorArray
+from temp_sensor import TempSensors
 from mqtt_controller import MQTTController
 from http_view import HTTPView
 from valve import Valve
@@ -71,12 +71,12 @@ print("Set up pump")
 pump = Pump(pump_led, ap)
 
 print("Set up Temp Sensors")
-ts = TempSensorArray(32, 33)
-outdoor_temp = ts.get_sensor(0, "outdoor_temp")
-community_in_temp = ts.get_sensor(1, "community_in_temp")
-community_out_temp = ts.get_sensor(2, "community_out_temp")
-circulation_in_temp = ts.get_sensor(3, "circulation_in_temp")
-circulation_out_temp = ts.get_sensor(4, "circulation_out_temp")
+temp_sensors = TempSensors(32, 33)
+ambient_temp = temp_sensors.get_sensor(0, "ambient_temp")
+primary_supply_temp = temp_sensors.get_sensor(1, "primary_supply_temp")
+primary_return_temp = temp_sensors.get_sensor(2, "primary_return_temp")
+secondary_supply_temp = temp_sensors.get_sensor(3, "secondary_supply_temp")
+secondary_return_temp = temp_sensors.get_sensor(4, "secondary_return_temp")
 
 
 print("Set up Valve")
@@ -89,9 +89,9 @@ valve.full_close()
 
 print("set up Regulator")
 regulator = Regulator(
-    community_in_temp=community_in_temp,
-    circulation_in_temp=circulation_in_temp,
-    outdoor_temp=outdoor_temp,
+    primary_supply_temp=primary_supply_temp,
+    secondary_supply_temp=secondary_supply_temp,
+    ambient_temp=ambient_temp,
     valve=valve,
     pump=pump)
 
@@ -101,11 +101,11 @@ mqtt = MQTTController(
     regulator=regulator,
     topic_prefix="district_heating",
     led=mqtt_led)
-mqtt.add_sensor(outdoor_temp)
-mqtt.add_sensor(community_in_temp)
-mqtt.add_sensor(community_out_temp)
-mqtt.add_sensor(circulation_in_temp)
-mqtt.add_sensor(circulation_out_temp)
+mqtt.add_sensor(ambient_temp)
+mqtt.add_sensor(primary_supply_temp)
+mqtt.add_sensor(primary_return_temp)
+mqtt.add_sensor(secondary_supply_temp)
+mqtt.add_sensor(secondary_return_temp)
 
 
 print("set up HTTP View")
@@ -117,11 +117,11 @@ http_v = HTTPView(
     mqtt=mqtt,
     valve=valve, 
     port=settings["web_server"]["port"])
-http_v.add_sensor(outdoor_temp)
-http_v.add_sensor(community_in_temp)
-http_v.add_sensor(community_out_temp)
-http_v.add_sensor(circulation_in_temp)
-http_v.add_sensor(circulation_out_temp)
+http_v.add_sensor(ambient_temp)
+http_v.add_sensor(primary_supply_temp)
+http_v.add_sensor(primary_return_temp)
+http_v.add_sensor(secondary_supply_temp)
+http_v.add_sensor(secondary_return_temp)
 http_v.start()
 
 print("Starting main loop")
@@ -131,6 +131,7 @@ while True:
     main_led.switch()
     pump.refresh()
     valve.refresh()
+    temp_sensors.scan()
     mqtt.execute()
     regulator.regulate()
     ensure_connections()

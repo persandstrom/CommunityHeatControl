@@ -4,7 +4,6 @@ import time
 import json
 import machine
 
-from pump import Pump
 from regulator import Regulator
 
 def format_uptime(seconds):
@@ -65,7 +64,6 @@ class HTTPView:
                             except Exception as e:
                                 print(f"Error reading sensor: {e}")
                                 sensors_data.append({"name": "unknown", "value": 0})
-                        
                         status = {
                             "uptime": format_uptime(int(time.ticks_ms() / 1000)),
                             "sta_if": self._sta_if.isconnected(),
@@ -77,6 +75,8 @@ class HTTPView:
                             "valve_closing": getattr(self.valve, 'closing', False),
                             "valve_position": getattr(self.valve, 'position', 0),
                             "mqtt": getattr(self.mqtt, 'connected', False),
+                            "regulation_adjustment": getattr(self.regulator, 'regulation_adjustment', 0),
+                            "desired_temp": getattr(self.regulator, 'desired_secondary_supply_temp', lambda: 0)(),
                             "sensors": sensors_data
                         }
                         content = json.dumps(status)
@@ -174,6 +174,14 @@ button{padding:5px 10px;border:none;border-radius:3px;margin:2px;cursor:pointer;
 </div>
 
 <div class="card">
+<h2>Regulation</h2>
+<div class="grid">
+<div class="item"><div class="label">Desired House Supply Temp</div><div class="value" id="desired_temp">...</div></div>
+<div class="item"><div class="label">Regulation Adjustment</div><div class="value" id="regulation_adj">...</div></div>
+</div>
+</div>
+
+<div class="card">
 <h2>Sensors</h2>
 <div class="sensors" id="sensors"></div>
 </div>
@@ -199,9 +207,18 @@ document.getElementById('valve').className='item warning';
 document.getElementById('valvestat').textContent=vs;
 document.getElementById('pos').textContent=d.valve_position||0;
 document.getElementById('fill').style.width=((d.valve_position||0)/150*100)+'%';
+document.getElementById('desired_temp').innerHTML=(d.desired_temp||0).toFixed(1)+'&deg;C';
+document.getElementById('regulation_adj').textContent=(d.regulation_adjustment||0).toFixed(2);
 let sh='';
+const sensorNames={
+'ambient_temp':'Outdoor Air',
+'primary_supply_temp':'Heat Source In',
+'primary_return_temp':'Heat Source Out',
+'secondary_supply_temp':'Building Supply',
+'secondary_return_temp':'Building Return'
+};
 for(let s of d.sensors){
-let n=s.name.replace(/_/g,' ').replace(/temp/g,'').trim();
+let n=sensorNames[s.name]||s.name.replace(/_/g,' ').replace(/temp/g,'').trim();
 sh+='<div class="sensor"><div>'+n+'</div><div class="temp">'+s.value.toFixed(1)+'&deg;C</div></div>';
 }
 document.getElementById('sensors').innerHTML=sh;
@@ -210,8 +227,8 @@ setInterval(update,2000);update();
 </script>
 </body>
 </html>"""
-                cl.send('HTTP/1.0 200 OK\r\nContent-type: text/html\r\n\r\n')
-                cl.send(html)
+                cl.send(b'HTTP/1.0 200 OK\r\nContent-type: text/html\r\n\r\n')
+                cl.send(html.encode('utf-8'))
                 cl.close()
             except Exception as e:
                 print("HTTP Error:", e)
