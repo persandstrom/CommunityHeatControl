@@ -1,14 +1,12 @@
 
 """ Main program for district heating controller """
-import time
-import network
+
 import json
+import time
 import gc
-
+import network
 from machine import Pin
-
 from umqtt.simple import MQTTClient
-
 from temp_sensor import TempSensors
 from mqtt_controller import MQTTController
 from http_view import HTTPView
@@ -27,12 +25,10 @@ pump_led = Led(14)
 valve_led = Led(15)
 mqtt_led = Led(16)
 
-
 print("Set up Station")
 sta_if = network.WLAN(network.WLAN.IF_STA)
 sta_if.active(True)
 print(f"Network active: {sta_if.active()}")
-
 
 print("Set up MQTT Client")
 mqtt = MQTTClient(
@@ -41,21 +37,16 @@ mqtt = MQTTClient(
     user=settings["mqtt"]["user"],
     password=settings["mqtt"]["password"])
 
-
-
 def ensure_connections():
     try:
         if not sta_if.isconnected():
-            print("11")
             sta_if.connect(settings["station"]["ssid"], settings["station"]["password"])
             print(f"Network connected {sta_if.isconnected()}")
             print(f"IP: {sta_if.ipconfig('addr4')}")
         if sta_if.isconnected() and not mqtt.connected:
-            print("12")
             mqtt.connect()
     except Exception:
         pass # Ignore exceptions during reconnect attempts
-
 
 # Set up network
 print("Set up Access point")
@@ -77,7 +68,6 @@ primary_supply_temp = temp_sensors.get_sensor(1, "primary_supply_temp")
 primary_return_temp = temp_sensors.get_sensor(2, "primary_return_temp")
 secondary_supply_temp = temp_sensors.get_sensor(3, "secondary_supply_temp")
 secondary_return_temp = temp_sensors.get_sensor(4, "secondary_return_temp")
-
 
 print("Set up Valve")
 pin_open_valve = Pin(19, Pin.OUT, value=1)
@@ -106,7 +96,6 @@ mqtt.add_sensor(primary_supply_temp)
 mqtt.add_sensor(primary_return_temp)
 mqtt.add_sensor(secondary_supply_temp)
 mqtt.add_sensor(secondary_return_temp)
-
 
 print("set up HTTP View")
 http_v = HTTPView(
