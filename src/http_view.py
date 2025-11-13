@@ -21,7 +21,7 @@ def format_uptime(seconds):
     return f"{days:.0f}d {hours:.0f}h {minutes:.0f}m {seconds:.0f}s"
 
 class HTTPView:
-    def __init__(self, sta_if, ap, regulator, pump, mqtt, valve, port):
+    def __init__(self, sta_if, ap, regulator, pump, mqtt, valve, port, reset_function):
         self._sensors = []
         self._sta_if = sta_if
         self._ap = ap
@@ -30,6 +30,7 @@ class HTTPView:
         self.mqtt = mqtt
         self.valve = valve
         self.port = port
+        self.reset_function = reset_function
 
     def start(self):
         _thread.start_new_thread(self._serve, ())
@@ -77,7 +78,9 @@ class HTTPView:
                             "mqtt": getattr(self.mqtt, 'connected', False),
                             "regulation_adjustment": getattr(self.regulator, 'regulation_adjustment', 0),
                             "desired_temp": getattr(self.regulator, 'desired_secondary_supply_temp', lambda: 0)(),
-                            "sensors": sensors_data
+                            "sensors": sensors_data,
+                            "gain": getattr(self.regulator, 'gain', 0),
+                            "offset": getattr(self.regulator, 'offset', 0)
                         }
                         content = json.dumps(status)
                         cl.send(b'HTTP/1.0 200 OK\r\nContent-Type: application/json\r\n\r\n')
@@ -90,7 +93,7 @@ class HTTPView:
                         cl.close()
                         continue
                     continue
-
+                print("Request:", request)
                 # Parse control requests
                 if 'GET /pump?state=on' in request:
                     self.pump.start()
@@ -105,10 +108,15 @@ class HTTPView:
                 elif 'GET /regulator?state=manual' in request:
                     self.regulator.set_mode(Regulator.MANUAL)
                 elif 'GET /reset' in request:
-                    machine.reset()
-
-                # Build main page
-                # Build main page
+                    self.reset_function()
+                elif 'GET /set_curve_gain?state=increase' in request:
+                    self.regulator.gain += 0.1
+                elif 'GET /set_curve_gain?state=decrease' in request:
+                    self.regulator.gain -= 0.1
+                elif 'GET /set_base_temp?state=increase' in request:
+                    self.regulator.offset += 1
+                elif 'GET /set_base_temp?state=decrease' in request:
+                    self.regulator.offset -= 1
                 html = """<!DOCTYPE html>
 <html>
 <head>
@@ -178,6 +186,12 @@ button{padding:5px 10px;border:none;border-radius:3px;margin:2px;cursor:pointer;
 <div class="grid">
 <div class="item"><div class="label">Desired House Supply Temp</div><div class="value" id="desired_temp">...</div></div>
 <div class="item"><div class="label">Regulation Adjustment</div><div class="value" id="regulation_adj">...</div></div>
+<div class="item"><div class="label">Curve Gain</div><div class="value" id="curve_gain">...</div>
+<button class="+0.1" onclick="sendAction('set_curve_gain','increase')">+0.1</button>
+<button class="-0.1" onclick="sendAction('set_curve_gain','decrease')">-0.1</button></div>
+<div class="item"><div class="label">Base Temperature</div><div class="value" id="base_temp">...</div>
+<button class="+1" onclick="sendAction('set_base_temp','increase')">+1&deg;C</button>
+<button class="-1" onclick="sendAction('set_base_temp','decrease')">-1&deg;C</button></div>
 </div>
 </div>
 
@@ -209,6 +223,8 @@ document.getElementById('pos').textContent=d.valve_position||0;
 document.getElementById('fill').style.width=((d.valve_position||0)/150*100)+'%';
 document.getElementById('desired_temp').innerHTML=(d.desired_temp||0).toFixed(1)+'&deg;C';
 document.getElementById('regulation_adj').textContent=(d.regulation_adjustment||0).toFixed(2);
+document.getElementById('curve_gain').innerHTML=(d.gain||0).toFixed(2);
+document.getElementById('base_temp').innerHTML=(d.offset||0).toFixed(1)+'&deg;C';
 let sh='';
 const sensorNames={
 'ambient_temp':'Outdoor Air',

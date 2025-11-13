@@ -9,6 +9,7 @@ start_time = time.time()
 
 time.ticks_ms = lambda: int((time.time() - start_time) * 1000)
 time.sleep_ms = lambda t: time.sleep(t / 1000)
+time.ticks_diff = lambda a, b: a - b
 
 import pump
 pump.mock_power = False
@@ -32,7 +33,7 @@ pump.set_shelly_power = set_shelly_power
 
 import ds18x20
 ds18x20.TEMPERATURES = {
-    '1' : 22.5,
+    '1' : -8.0,
     '2' : 23.0,
     '3' : 21.8,
     '4' : 22.1,

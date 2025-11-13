@@ -22,18 +22,19 @@ class Valve:
             self.position = min(150, self.position + 1)
             self.pin_open.value(0)
 
-    def close(self, duration=3):
+    def close(self, duration=1):
         if self.adjusting or self.position <= 0:
             return
+
+        # If closing would reach or pass fully closed position
+        # add extra time to ensure complete closure
+        if self.position <= duration:
+            duration = self.position + 5
+
         self.adjusting = duration
         self.closing = True
 
-    def full_close(self):
-        self.opening = False
-        self.closing = True
-        self.adjusting = 150
-
-    def open(self, duration=3):
+    def open(self, duration=1):
         if self.adjusting or self.position >= 150:
             return
         self.adjusting = duration

@@ -19,5 +19,6 @@ class Pin:
 def reset():
     print("Machine reset called")
 
+
 Pin.OUT = 'output'
 Pin.IN = 'input'

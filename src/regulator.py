@@ -11,17 +11,21 @@ class Regulator:
         self.mode = Regulator.MANUAL
         self.pid = PIDRegulator(expected_delta_t=1, integral_gain=.000, derivative_gain=0)
 
-        self.max_community_heating_temp = 45  # Max community heating temperature
+        # Configurable parameters
         self.adjustment_threshold = 3  # Minimum PID output to trigger valve adjustment
         self.adjustment_interval = 300  # 5 minutes = 300 seconds
-        self.last_adjustment_time = self.adjustment_interval # OK to regulate immediately
-        self.regulation_adjustment = 0
 
-    def max_outdoor_temp_for_heating_reached(self):
-        return self.ambient_temp.value() > 16
+        # Heating curve parameters
+        self.gain = 1.0   # Positive gain: higher = steeper heating curve
+        self.offset = 30.0   # Base temperature when ambient is 0°C
+
+        # Internal state
+        self.regulation_adjustment = 0
+        self.last_adjustment_time = self.adjustment_interval
+
 
     def desired_secondary_supply_temp(self):
-        return -1*self.ambient_temp.value()+30
+        return -1 * self.gain * self.ambient_temp.value() + self.offset
 
     def regulate(self):
         self.regulation_adjustment = self.pid.compute(
@@ -32,14 +36,7 @@ class Regulator:
         if self.mode == Regulator.MANUAL:
             return
 
-        # If the outdoor temperature is above 16 degrees, turn off the pump and close the valve
-        if self.max_outdoor_temp_for_heating_reached():
-            self.valve.close()
-            self.pump.stop()
-            self.pid.reset()
-            return
-
-        # If the outdoor temperature is below or equal to 16 degrees, turn on the pump
+        # Keep pump running during heating season - manual seasonal control
         self.pump.start()
 
         self.last_adjustment_time += 1
