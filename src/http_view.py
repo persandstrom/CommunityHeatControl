@@ -93,7 +93,7 @@ class HTTPView:
                         cl.close()
                         continue
                     continue
-                print("Request:", request)
+
                 # Parse control requests
                 if 'GET /pump?state=on' in request:
                     self.pump.start()

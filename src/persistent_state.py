@@ -12,23 +12,17 @@ class PersistentState:
         self.curve_gain = 1.0
         self.base_temp = 30.0
         self.save_time = time.ticks_ms()  # More reliable for intervals
+        self.has_changes = False
 
 
     def update(self, valve_position, pump_status, regulator_mode, curve_gain, base_temp):
         # Check if any value has changed
-        has_changes = (valve_position != self.valve_position or
-                      pump_status != self.pump_status or
-                      regulator_mode != self.regulator_mode or
-                      curve_gain != self.curve_gain or
-                      base_temp != self.base_temp)
-
-        if not has_changes:
-            return  # No changes, do not save
-
-        # Check time throttling - save at most once every 10 minutes
-        current_time = time.ticks_ms()
-        if time.ticks_diff(current_time, self.save_time) < 600000:  # 10 minutes in ms
-            return  # Too soon since last save
+        self.has_changes = (self.has_changes
+                            or valve_position != self.valve_position
+                            or pump_status != self.pump_status
+                            or regulator_mode != self.regulator_mode
+                            or curve_gain != self.curve_gain
+                            or base_temp != self.base_temp)
 
         # Update values
         self.valve_position = valve_position
@@ -36,6 +30,13 @@ class PersistentState:
         self.regulator_mode = regulator_mode
         self.curve_gain = curve_gain
         self.base_temp = base_temp
+
+
+        # save at most once every 10 minutes
+        current_time = time.ticks_ms()
+        if time.ticks_diff(current_time, self.save_time) < 600000:  # 10 minutes in ms
+            return  # Too soon since last save
+
 
         self.save()
 
@@ -51,6 +52,7 @@ class PersistentState:
             with open("state.json", "w", encoding="utf-8") as f:
                 json.dump(state, f)
             self.save_time = time.ticks_ms()
+            self.has_changes = False
         except OSError as e:
             print(f"Failed to save state: {e}")
 
@@ -64,6 +66,7 @@ class PersistentState:
                 self.curve_gain = state.get("curve_gain", 1.0)
                 self.base_temp = state.get("base_temp", 30.0)
                 self.save_time = time.ticks_ms()
+                self.has_changes = False
         except (OSError, ValueError) as e:
             print(f"Failed to load state, using defaults: {e}")
             # Use default values already set in constructor
