@@ -22,6 +22,12 @@ class Valve:
             self.position = min(150, self.position + 1)
             self.pin_open.value(0)
 
+    def adjust(self, amount):
+        if amount < 0:
+            self.close(duration=int(-amount))
+        elif amount > 0:
+            self.open(duration=int(amount))
+
     def close(self, duration=1):
         if self.adjusting or self.position <= 0:
             return
