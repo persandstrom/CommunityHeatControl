@@ -35,7 +35,7 @@ Enables communication with an MQTT broker for remote monitoring and control.
 - **client_id**: Unique identifier for this device on the MQTT network
 - **broker**: IP address of the MQTT broker server
 - **user/password**: Credentials for authenticating with the MQTT broker
-- **Purpose**: Allows integration with home automation systems and remote monitoring
+
 
 #### 4. Web Server Configuration
 Configures the built-in web interface.
