@@ -165,7 +165,8 @@ try:
             pump.status,
             regulator.mode,
             regulator.gain,
-            regulator.offset)
+            regulator.offset,
+            regulator.proportional_gain)
 
         gc.collect()
         loop_time = time.ticks_ms() - start_loop_time

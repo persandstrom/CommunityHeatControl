@@ -11,18 +11,25 @@ class PersistentState:
         self.regulator_mode = Regulator.MANUAL  # Default to manual mode
         self.curve_gain = 1.0
         self.base_temp = 30.0
+        self.proportional_gain = 1.0
         self.save_time = time.ticks_ms()  # More reliable for intervals
         self.has_changes = False
 
-
-    def update(self, valve_position, pump_status, regulator_mode, curve_gain, base_temp):
+    def update(self,
+               valve_position,
+               pump_status,
+               regulator_mode,
+               curve_gain,
+               base_temp,
+               proportional_gain):
         # Check if any value has changed
         self.has_changes = (self.has_changes
                             or valve_position != self.valve_position
                             or pump_status != self.pump_status
                             or regulator_mode != self.regulator_mode
                             or curve_gain != self.curve_gain
-                            or base_temp != self.base_temp)
+                            or base_temp != self.base_temp
+                            or proportional_gain != self.proportional_gain)
 
         # Update values
         self.valve_position = valve_position
@@ -30,6 +37,7 @@ class PersistentState:
         self.regulator_mode = regulator_mode
         self.curve_gain = curve_gain
         self.base_temp = base_temp
+        self.proportional_gain = proportional_gain
 
 
         # save at most once every 10 minutes
@@ -46,7 +54,8 @@ class PersistentState:
             "pump_status": self.pump_status,
             "regulator_mode": self.regulator_mode,
             "curve_gain": self.curve_gain,
-            "base_temp": self.base_temp
+            "base_temp": self.base_temp,
+            "proportional_gain": self.proportional_gain            
         }
         try:
             with open("state.json", "w", encoding="utf-8") as f:
@@ -65,6 +74,7 @@ class PersistentState:
                 self.regulator_mode = state.get("regulator_mode", Regulator.MANUAL)
                 self.curve_gain = state.get("curve_gain", 1.0)
                 self.base_temp = state.get("base_temp", 30.0)
+                self.proportional_gain = state.get("proportional_gain", 1.0)
                 self.save_time = time.ticks_ms()
                 self.has_changes = False
         except (OSError, ValueError) as e:

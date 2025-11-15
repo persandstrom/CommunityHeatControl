@@ -80,7 +80,8 @@ class HTTPView:
                             "desired_temp": getattr(self.regulator, 'desired_secondary_supply_temp', lambda: 0)(),
                             "sensors": sensors_data,
                             "gain": getattr(self.regulator, 'gain', 0),
-                            "offset": getattr(self.regulator, 'offset', 0)
+                            "offset": getattr(self.regulator, 'offset', 0),
+                            "proportional_gain": getattr(self.regulator, 'proportional_gain', 0),
                         }
                         content = json.dumps(status)
                         cl.send(b'HTTP/1.0 200 OK\r\nContent-Type: application/json\r\n\r\n')
@@ -117,6 +118,10 @@ class HTTPView:
                     self.regulator.offset += 1
                 elif 'GET /set_base_temp?state=decrease' in request:
                     self.regulator.offset -= 1
+                elif 'GET /set_proportional_gain?state=increase' in request:
+                    self.regulator.proportional_gain += 0.1
+                elif 'GET /set_proportional_gain?state=decrease' in request:
+                    self.regulator.proportional_gain -= 0.1
                 html = """<!DOCTYPE html>
 <html>
 <head>
@@ -192,6 +197,9 @@ button{padding:5px 10px;border:none;border-radius:3px;margin:2px;cursor:pointer;
 <div class="item"><div class="label">Base Temperature</div><div class="value" id="base_temp">...</div>
 <button class="+1" onclick="sendAction('set_base_temp','increase')">+1&deg;C</button>
 <button class="-1" onclick="sendAction('set_base_temp','decrease')">-1&deg;C</button></div>
+<div class="item"><div class="label">Proportional Gain</div><div class="value" id="proportional_gain">...</div>
+<button class="+0.1" onclick="sendAction('set_proportional_gain','increase')">+0.1</button>
+<button class="-0.1" onclick="sendAction('set_proportional_gain','decrease')">-0.1</button></div>
 </div>
 </div>
 
@@ -225,6 +233,7 @@ document.getElementById('desired_temp').innerHTML=(d.desired_temp||0).toFixed(1)
 document.getElementById('regulation_adj').textContent=(d.regulation_adjustment||0).toFixed(2);
 document.getElementById('curve_gain').innerHTML=(d.gain||0).toFixed(2);
 document.getElementById('base_temp').innerHTML=(d.offset||0).toFixed(1)+'&deg;C';
+document.getElementById('proportional_gain').innerHTML=(d.proportional_gain||0).toFixed(2);
 let sh='';
 const sensorNames={
 'ambient_temp':'Outdoor Air',
