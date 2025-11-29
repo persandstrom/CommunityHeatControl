@@ -10,6 +10,7 @@ class Regulator:
 
         # Configurable parameters
         self.adjustment_threshold = 3  # Minimum error output to trigger valve adjustment
+        self.max_adjustment = 3.0  # Maximum adjustment per cycle
         self.adjustment_interval = 300  # 5 minutes = 300 seconds
         self.proportional_gain = 1.0
 
@@ -44,7 +45,10 @@ class Regulator:
         self.last_adjustment_time = 0
 
         if abs(self.regulation_adjustment) > self.adjustment_threshold:
-            self.valve.adjust(self.regulation_adjustment)
+            adjustment = max(
+                -self.max_adjustment,
+                min(self.regulation_adjustment, self.max_adjustment))
+            self.valve.adjust(adjustment)
 
 
     def set_mode(self, mode):

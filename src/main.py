@@ -5,7 +5,6 @@ import time
 import gc
 import network
 from machine import Pin
-from umqtt.simple import MQTTClient
 from temp_sensor import TempSensors
 from mqtt_controller import MQTTController
 from http_view import HTTPView
@@ -15,6 +14,7 @@ from regulator import Regulator
 from pump import Pump
 from persistent_state import PersistentState
 import machine
+from system_controller import SystemController
 
 
 with open("settings.json") as f:
@@ -29,44 +29,37 @@ pump_led = Led(14)
 valve_led = Led(15)
 mqtt_led = Led(16)
 
-print("Set up Station")
-sta_if = network.WLAN(network.WLAN.IF_STA)
-sta_if.active(True)
-print(f"Network active: {sta_if.active()}")
-
-print("Set up MQTT Client")
-mqtt = MQTTClient(
-    client_id=settings["mqtt"]["client_id"],
-    server=settings["mqtt"]["broker"],
-    user=settings["mqtt"]["user"],
-    password=settings["mqtt"]["password"])
+print("Set up wifi client")
+wifi_client = network.WLAN(network.WLAN.IF_STA)
+wifi_client.active(True)
+print(f"Network active: {wifi_client.active()}")
 
 def ensure_connections():
     try:
-        if not sta_if.isconnected():
-            sta_if.connect(settings["station"]["ssid"], settings["station"]["password"])
-            print(f"Network connected {sta_if.isconnected()}")
-            print(f"IP: {sta_if.ipconfig('addr4')}")
-        if sta_if.isconnected() and not mqtt.connected:
+        if not wifi_client.isconnected():
+            wifi_client.connect(settings["station"]["ssid"], settings["station"]["password"])
+            print(f"Network connected {wifi_client.isconnected()}")
+            print(f"IP: {wifi_client.ipconfig('addr4')}")
+        if wifi_client.isconnected() and not mqtt.connected:
             mqtt.connect()
     except Exception:
         pass # Ignore exceptions during reconnect attempts
 
 # Set up network
 print("Set up Access point")
-ap = network.WLAN(network.AP_IF)
-ap.active(False) # Reset if active
-ap.active(True)
-ap.config(essid=settings["access_point"]["ssid"],
+access_point = network.WLAN(network.AP_IF)
+access_point.active(False) # Reset if active
+access_point.active(True)
+access_point.config(essid=settings["access_point"]["ssid"],
           password=settings["access_point"]["password"],
           authmode=network.AUTH_WPA_WPA2_PSK)
-print('Access Point Active: ', ap.ifconfig())
+print('Access Point Active: ', access_point.ifconfig())
 
 print("Set up pump")
-pump = Pump(pump_led, ap)
-if persistent_state.pump_status == Pump.ON:
+pump = Pump(access_point)
+if persistent_state.state["pump_status"] == Pump.ON:
     pump.start()
-elif persistent_state.pump_status == Pump.OFF:
+elif persistent_state.state["pump_status"] == Pump.OFF:
     pump.stop()
 
 print("Set up Temp Sensors")
@@ -83,7 +76,7 @@ pin_close_valve = Pin(18, Pin.OUT, value=1)
 valve = Valve(
     pin_open_valve,
     pin_close_valve)
-valve.position = persistent_state.valve_position
+valve.position = persistent_state.state["valve_position"]
 
 print("set up Regulator")
 regulator = Regulator(
@@ -92,32 +85,31 @@ regulator = Regulator(
     ambient_temp=ambient_temp,
     valve=valve,
     pump=pump)
-regulator.mode = persistent_state.regulator_mode
-regulator.gain = persistent_state.curve_gain
-regulator.offset = persistent_state.base_temp
+regulator.mode = persistent_state.state["regulator_mode"]
+regulator.gain = persistent_state.state["curve_gain"]
+regulator.offset = persistent_state.state["base_temp"]
+regulator.proportional_gain = persistent_state.state["proportional_gain"]
+
+system = SystemController(
+    regulator=regulator,
+    pump=pump,
+    valve=valve,
+    ambient_temp=ambient_temp,
+    primary_supply_temp=primary_supply_temp,
+    primary_return_temp=primary_return_temp,
+    secondary_supply_temp=secondary_supply_temp,
+    secondary_return_temp=secondary_return_temp)
 
 print("set up MQTT Controller")
 mqtt = MQTTController(
-    mqtt=mqtt,
-    regulator=regulator,
-    topic_prefix="district_heating",
-    led=mqtt_led)
-mqtt.add_sensor(ambient_temp)
-mqtt.add_sensor(primary_supply_temp)
-mqtt.add_sensor(primary_return_temp)
-mqtt.add_sensor(secondary_supply_temp)
-mqtt.add_sensor(secondary_return_temp)
+    mqtt_settings=settings["mqtt"],
+    system=system)
 
 def cleanup():
     try:
-        ap.active(False)
-        sta_if.active(False)
-        persistent_state.update(
-            valve.position,
-            pump.status,
-            regulator.mode,
-            regulator.gain,
-            regulator.offset)
+        access_point.active(False)
+        wifi_client.active(False)
+        persistent_state.update(system)
         persistent_state.save()
         print("Shutdown complete")
     except Exception as e:
@@ -131,12 +123,10 @@ def reset():
 
 print("set up HTTP View")
 http_v = HTTPView(
-    sta_if,
-    ap,
-    regulator=regulator,
-    pump=pump,
-    mqtt=mqtt,
-    valve=valve, 
+    wifi_client,
+    access_point,
+    mqtt = mqtt,
+    system=system,
     port=settings["web_server"]["port"],
     reset_function=reset)
 http_v.add_sensor(ambient_temp)
@@ -146,8 +136,6 @@ http_v.add_sensor(secondary_supply_temp)
 http_v.add_sensor(secondary_return_temp)
 http_v.start()
 
-
-
 print("Starting main loop")
 loop_time = 1000 # ms
 try:
@@ -155,19 +143,20 @@ try:
         start_loop_time = time.ticks_ms()
         main_led.switch()
         pump.refresh()
+        if pump.status == Pump.UNKNOWN:
+            pump_led.on()
+        else:
+            pump_led.switch()
         valve.refresh()
         temp_sensors.scan()
         mqtt.execute()
+        if mqtt.connected:
+            mqtt_led.switch()
+        else:
+            mqtt_led.on()
         regulator.regulate()
         ensure_connections()
-        persistent_state.update(
-            valve.position,
-            pump.status,
-            regulator.mode,
-            regulator.gain,
-            regulator.offset,
-            regulator.proportional_gain)
-
+        persistent_state.update(system)
         gc.collect()
         loop_time = time.ticks_ms() - start_loop_time
         print(f"loop time: {loop_time}")

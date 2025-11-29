@@ -6,7 +6,6 @@ class MQTTClient:
         self.user = user
         self.password = password
         self.keepalive = keepalive
-        self.connected = False
 
     def connect(self):
         # Simulate connecting to the MQTT broker
@@ -26,4 +25,8 @@ class MQTTClient:
 
     def check_msg(self):
         # Simulate checking for incoming messages
+        pass
+
+    def set_callback(self, callback):
+        # Simulate setting a callback for incoming messages
         pass

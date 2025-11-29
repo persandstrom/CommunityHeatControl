@@ -2,8 +2,6 @@ import socket
 import _thread
 import time
 import json
-import machine
-
 from regulator import Regulator
 
 def format_uptime(seconds):
@@ -21,14 +19,12 @@ def format_uptime(seconds):
     return f"{days:.0f}d {hours:.0f}h {minutes:.0f}m {seconds:.0f}s"
 
 class HTTPView:
-    def __init__(self, sta_if, ap, regulator, pump, mqtt, valve, port, reset_function):
+    def __init__(self, wifi_client, access_point, mqtt, system, port, reset_function):
         self._sensors = []
-        self._sta_if = sta_if
-        self._ap = ap
-        self.regulator = regulator
-        self.pump = pump
+        self._sta_if = wifi_client
+        self._ap = access_point
+        self.system = system
         self.mqtt = mqtt
-        self.valve = valve
         self.port = port
         self.reset_function = reset_function
 
@@ -69,19 +65,19 @@ class HTTPView:
                             "uptime": format_uptime(int(time.ticks_ms() / 1000)),
                             "sta_if": self._sta_if.isconnected(),
                             "ap": self._ap.active(),
-                            "regulator_mode": getattr(self.regulator, 'mode', 'unknown'),
-                            "pump": self.pump.status,  # Send the actual status string
-                            "valve_adjusting": getattr(self.valve, 'adjusting', 0),
-                            "valve_opening": getattr(self.valve, 'opening', False),
-                            "valve_closing": getattr(self.valve, 'closing', False),
-                            "valve_position": getattr(self.valve, 'position', 0),
+                            "regulator_mode": getattr(self.system.regulator, 'mode', 'unknown'),
+                            "pump": self.system.pump.status,  # Send the actual status string
+                            "valve_adjusting": getattr(self.system.valve, 'adjusting', 0),
+                            "valve_opening": getattr(self.system.valve, 'opening', False),
+                            "valve_closing": getattr(self.system.valve, 'closing', False),
+                            "valve_position": getattr(self.system.valve, 'position', 0),
                             "mqtt": getattr(self.mqtt, 'connected', False),
-                            "regulation_adjustment": getattr(self.regulator, 'regulation_adjustment', 0),
-                            "desired_temp": getattr(self.regulator, 'desired_secondary_supply_temp', lambda: 0)(),
+                            "regulation_adjustment": getattr(self.system.regulator, 'regulation_adjustment', 0),
+                            "desired_temp": getattr(self.system.regulator, 'desired_secondary_supply_temp', lambda: 0)(),
                             "sensors": sensors_data,
-                            "gain": getattr(self.regulator, 'gain', 0),
-                            "offset": getattr(self.regulator, 'offset', 0),
-                            "proportional_gain": getattr(self.regulator, 'proportional_gain', 0),
+                            "gain": getattr(self.system.regulator, 'gain', 0),
+                            "offset": getattr(self.system.regulator, 'offset', 0),
+                            "proportional_gain": getattr(self.system.regulator, 'proportional_gain', 0),
                         }
                         content = json.dumps(status)
                         cl.send(b'HTTP/1.0 200 OK\r\nContent-Type: application/json\r\n\r\n')
@@ -97,31 +93,31 @@ class HTTPView:
 
                 # Parse control requests
                 if 'GET /pump?state=on' in request:
-                    self.pump.start()
+                    self.system.pump.start()
                 elif 'GET /pump?state=off' in request:
-                    self.pump.stop()
+                    self.system.pump.stop()
                 elif 'GET /valve?state=open' in request:
-                    self.valve.open()
+                    self.system.valve.open()
                 elif 'GET /valve?state=close' in request:
-                    self.valve.close()
+                    self.system.valve.close()
                 elif 'GET /regulator?state=auto' in request:
-                    self.regulator.set_mode(Regulator.AUTOMATIC)
+                    self.system.regulator.set_mode(Regulator.AUTOMATIC)
                 elif 'GET /regulator?state=manual' in request:
-                    self.regulator.set_mode(Regulator.MANUAL)
+                    self.system.regulator.set_mode(Regulator.MANUAL)
                 elif 'GET /reset' in request:
                     self.reset_function()
                 elif 'GET /set_curve_gain?state=increase' in request:
-                    self.regulator.gain += 0.1
+                    self.system.regulator.gain += 0.1
                 elif 'GET /set_curve_gain?state=decrease' in request:
-                    self.regulator.gain -= 0.1
+                    self.system.regulator.gain -= 0.1
                 elif 'GET /set_base_temp?state=increase' in request:
-                    self.regulator.offset += 1
+                    self.system.regulator.offset += 1
                 elif 'GET /set_base_temp?state=decrease' in request:
-                    self.regulator.offset -= 1
+                    self.system.regulator.offset -= 1
                 elif 'GET /set_proportional_gain?state=increase' in request:
-                    self.regulator.proportional_gain += 0.1
+                    self.system.regulator.proportional_gain += 0.1
                 elif 'GET /set_proportional_gain?state=decrease' in request:
-                    self.regulator.proportional_gain -= 0.1
+                    self.system.regulator.proportional_gain -= 0.1
                 html = """<!DOCTYPE html>
 <html>
 <head>

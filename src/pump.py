@@ -1,8 +1,6 @@
 import requests
 
-
 SHELLY_IP = "192.168.4.2"
-
 
 def get_shelly_status():
     url = f"http://{SHELLY_IP}/rpc"
@@ -44,16 +42,14 @@ def set_shelly_power(on):
 
 
 class Pump:
-    def __init__(self, led, access_point):
+    def __init__(self, access_point):
         self.status = Pump.UNKNOWN
         self.wanted_state = Pump.UNKNOWN
         self.power = None
-        self.led = led
-        self.refreshing = False
         self.access_point = access_point
-    
+
     # Check if Shelly is connected to your AP
-    def is_shelly_connected_to_ap(self):
+    def is_shelly_connected_to_accesspoint(self):
         try:
             stations = self.access_point.status('stations')
             return len(stations) > 0
@@ -61,20 +57,13 @@ class Pump:
             return False
 
     def refresh(self):
-        if self.refreshing:
-            return # Do not refresh if already ongoing
-        if not self.is_shelly_connected_to_ap():
+        if not self.is_shelly_connected_to_accesspoint():
             self.status = Pump.UNKNOWN
             self.power = None
-            self.led.on()
-            return
-        self._refresh()
 
-    def _refresh(self):
         if self.wanted_state != Pump.UNKNOWN and self.wanted_state != self.status:
             set_shelly_power(self.wanted_state == Pump.ON)
 
-        self.refreshing = True
         try:
             status_data = get_shelly_status()
             self.status = Pump.ON if status_data["result"]["switch:0"]["output"] else Pump.OFF
@@ -84,11 +73,6 @@ class Pump:
             self.status = Pump.UNKNOWN
             self.power = None
 
-        if self.power is not None and not self.status == Pump.UNKNOWN:
-            self.led.switch()
-        else:
-            self.led.on()
-        self.refreshing = False
 
     def start(self):
         self.wanted_state = Pump.ON
