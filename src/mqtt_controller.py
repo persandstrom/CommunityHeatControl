@@ -64,19 +64,19 @@ class MQTTController:
                 str(self.system.regulator.adjustment_threshold))
             self.client.publish(
                 f"{self.topic_prefix}/ambient_temp",
-                str(self.system.ambient_temp.value))
+                str(self.system.ambient_temp.value()))
             self.client.publish(
                 f"{self.topic_prefix}/primary_supply_temp",
-                str(self.system.primary_supply_temp.value))
+                str(self.system.primary_supply_temp.value()))
             self.client.publish(
                 f"{self.topic_prefix}/primary_return_temp",
-                str(self.system.primary_return_temp.value))
+                str(self.system.primary_return_temp.value()))
             self.client.publish(
                 f"{self.topic_prefix}/secondary_supply_temp",
-                str(self.system.secondary_supply_temp.value))
+                str(self.system.secondary_supply_temp.value()))
             self.client.publish(
                 f"{self.topic_prefix}/secondary_return_temp",
-                str(self.system.secondary_return_temp.value))
+                str(self.system.secondary_return_temp.value()))
             self.client.check_msg()
         except Exception as e:
             print(f"MQTT failure {e}, disconnecting")
