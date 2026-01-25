@@ -3,6 +3,7 @@ import _thread
 import time
 import json
 from regulator import Regulator
+import crashdump
 
 def format_uptime(seconds):
     SECS_PER_MIN = 60
@@ -48,6 +49,15 @@ class HTTPView:
             try:
                 cl, addr = s.accept()
                 request = cl.recv(1024).decode()
+
+                # return crahsdump
+                if "GET /crashdump" in request:
+                    content = crashdump.read()
+                    cl.send(b'HTTP/1.0 200 OK\r\nContent-type: text/html\r\n\r\n')
+                    cl.send(content.encode('utf-8'))
+                    cl.close()
+                    continue
+
 
                 # Handle AJAX status request
                 if "GET /status" in request:

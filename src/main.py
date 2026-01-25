@@ -3,6 +3,7 @@
 import json
 import time
 import gc
+import sys
 import network
 from machine import Pin
 from temp_sensor import TempSensors
@@ -15,6 +16,7 @@ from pump import Pump
 from persistent_state import PersistentState
 import machine
 from system_controller import SystemController
+import crashdump
 
 
 with open("settings.json") as f:
@@ -163,6 +165,7 @@ try:
         sleep_time = max(0, 1000 - loop_time)
         time.sleep_ms(sleep_time)
 
+
 except KeyboardInterrupt:
     print("Stopping...")
     cleanup()
@@ -171,5 +174,6 @@ except KeyboardInterrupt:
 except Exception as e:
     # Other errors - clean shutdown and reset
     print(f"Unexpected error: {e}")
+    crashdump.write(e)
     print("Performing reset...")
     reset()
