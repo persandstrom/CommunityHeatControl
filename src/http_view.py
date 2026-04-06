@@ -1,6 +1,5 @@
 import socket
 import _thread
-import time
 import json
 from regulator import Regulator
 import crashdump
@@ -78,7 +77,7 @@ class HTTPView:
                                     print(f"Error reading sensor: {e}")
                                     sensors_data.append({"name": "unknown", "value": 0})
                             status = {
-                                "uptime": format_uptime(int(time.ticks_ms() / 1000)),
+                                "uptime": format_uptime(self.system.uptime),
                                 "sta_if": self._sta_if.isconnected(),
                                 "ap": self._ap.active(),
                                 "regulator_mode": getattr(self.system.regulator, 'mode', 'unknown'),

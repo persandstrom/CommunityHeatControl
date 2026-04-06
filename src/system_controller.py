@@ -9,3 +9,4 @@ class SystemController:
         self.primary_return_temp = primary_return_temp
         self.secondary_supply_temp = secondary_supply_temp
         self.secondary_return_temp = secondary_return_temp
+        self.uptime = 0

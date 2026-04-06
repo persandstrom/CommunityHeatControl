@@ -147,6 +147,7 @@ print("Starting main loop")
 PERIOD = 1000 # ms
 try:
     while True:
+        system.uptime+=1
         start_loop_time = time.ticks_ms()
         with system_lock:
             main_led.switch()
