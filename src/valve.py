@@ -29,13 +29,13 @@ class Valve:
             self.open(duration=int(amount))
 
     def close(self, duration=1):
-        if self.adjusting or self.position <= 0:
+        if self.adjusting:
             return
 
         # If closing would reach or pass fully closed position
         # add extra time to ensure complete closure
         if self.position <= duration:
-            duration = self.position + 5
+            duration = max(self.position + 5, duration)
 
         self.adjusting = duration
         self.closing = True

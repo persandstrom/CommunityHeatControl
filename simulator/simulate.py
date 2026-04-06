@@ -1,6 +1,7 @@
 import sys
 import os
 import time
+import gc
 
 # Add the src directory to Python path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
@@ -10,6 +11,7 @@ start_time = time.time()
 time.ticks_ms = lambda: int((time.time() - start_time) * 1000)
 time.sleep_ms = lambda t: time.sleep(t / 1000)
 time.ticks_diff = lambda a, b: a - b
+gc.mem_free = lambda: int(7)
 
 import pump
 pump.mock_power = False

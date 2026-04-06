@@ -3,8 +3,8 @@
 import json
 import time
 import gc
-import sys
 import network
+import _thread
 from machine import Pin
 from temp_sensor import TempSensors
 from mqtt_controller import MQTTController
@@ -36,16 +36,7 @@ wifi_client = network.WLAN(network.WLAN.IF_STA)
 wifi_client.active(True)
 print(f"Network active: {wifi_client.active()}")
 
-def ensure_connections():
-    try:
-        if not wifi_client.isconnected():
-            wifi_client.connect(settings["station"]["ssid"], settings["station"]["password"])
-            print(f"Network connected {wifi_client.isconnected()}")
-            print(f"IP: {wifi_client.ipconfig('addr4')}")
-        if wifi_client.isconnected() and not mqtt.connected:
-            mqtt.connect()
-    except Exception:
-        pass # Ignore exceptions during reconnect attempts
+
 
 # Set up network
 print("Set up Access point")
@@ -107,6 +98,17 @@ mqtt = MQTTController(
     mqtt_settings=settings["mqtt"],
     system=system)
 
+def ensure_connections():
+    try:
+        if not wifi_client.isconnected():
+            wifi_client.connect(settings["station"]["ssid"], settings["station"]["password"])
+            print(f"Network connected {wifi_client.isconnected()}")
+            print(f"IP: {wifi_client.ipconfig('addr4')}")
+        if wifi_client.isconnected() and not mqtt.connected:
+            mqtt.connect()
+    except Exception:
+        pass # Ignore exceptions during reconnect attempts
+
 def cleanup():
     try:
         access_point.active(False)
@@ -123,14 +125,17 @@ def reset():
     cleanup()
     machine.reset()
 
+system_lock = _thread.allocate_lock()
+
 print("set up HTTP View")
 http_v = HTTPView(
     wifi_client,
     access_point,
-    mqtt = mqtt,
+    mqtt=mqtt,
     system=system,
     port=settings["web_server"]["port"],
-    reset_function=reset)
+    reset_function=reset,
+    lock=system_lock)
 http_v.add_sensor(ambient_temp)
 http_v.add_sensor(primary_supply_temp)
 http_v.add_sensor(primary_return_temp)
@@ -139,30 +144,32 @@ http_v.add_sensor(secondary_return_temp)
 http_v.start()
 
 print("Starting main loop")
-loop_time = 1000 # ms
+PERIOD = 1000 # ms
 try:
     while True:
         start_loop_time = time.ticks_ms()
-        main_led.switch()
-        pump.refresh()
-        if pump.status == Pump.UNKNOWN:
-            pump_led.on()
-        else:
-            pump_led.switch()
-        valve.refresh()
-        temp_sensors.scan()
-        mqtt.execute()
-        if mqtt.connected:
-            mqtt_led.switch()
-        else:
-            mqtt_led.on()
-        regulator.regulate()
-        ensure_connections()
-        persistent_state.update(system)
-        gc.collect()
-        loop_time = time.ticks_ms() - start_loop_time
-        print(f"loop time: {loop_time}")
-        sleep_time = max(0, 1000 - loop_time)
+        with system_lock:
+            main_led.switch()
+            pump.refresh()
+            if pump.status == Pump.UNKNOWN:
+                pump_led.on()
+            else:
+                pump_led.switch()
+            valve.refresh()
+            temp_sensors.scan()
+            mqtt.execute()
+            if mqtt.connected:
+                mqtt_led.switch()
+            else:
+                mqtt_led.on()
+            regulator.regulate()
+            ensure_connections()
+            persistent_state.update(system)
+            gc.collect()
+        end_loop_time = time.ticks_ms()
+        loop_time = time.ticks_diff(end_loop_time, start_loop_time)
+        print(f"loop time: {loop_time}, free mem: {gc.mem_free()}")
+        sleep_time = max(0, PERIOD - loop_time)
         time.sleep_ms(sleep_time)
 
 
@@ -176,4 +183,7 @@ except Exception as e:
     print(f"Unexpected error: {e}")
     crashdump.write(e)
     print("Performing reset...")
-    reset()
+    try:
+        reset()
+    except Exception:
+        machine.reset()

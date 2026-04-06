@@ -15,6 +15,7 @@ class MQTTController:
         self.connected = False
 
     def connect(self):
+        return
         try:
             self.client.connect()
             self.client.set_callback(self.incomming_message)

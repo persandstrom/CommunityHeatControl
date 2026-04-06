@@ -5,22 +5,25 @@ import json
 from regulator import Regulator
 import crashdump
 
-def format_uptime(seconds):
+def format_uptime(total_seconds):
+    """Format uptime in seconds to human-readable string."""
     SECS_PER_MIN = 60
     SECS_PER_HOUR = 3600
     SECS_PER_DAY = 86400
 
-    days = seconds / SECS_PER_DAY
-    seconds %= SECS_PER_DAY
-    hours = seconds // SECS_PER_HOUR
-    seconds %= SECS_PER_HOUR
-    minutes = seconds // SECS_PER_MIN
-    seconds %= SECS_PER_MIN
+    days = total_seconds // SECS_PER_DAY
+    remaining = total_seconds % SECS_PER_DAY
 
-    return f"{days:.0f}d {hours:.0f}h {minutes:.0f}m {seconds:.0f}s"
+    hours = remaining // SECS_PER_HOUR
+    remaining %= SECS_PER_HOUR
+
+    minutes = remaining // SECS_PER_MIN
+    seconds = remaining % SECS_PER_MIN
+
+    return f"{days}d {hours}h {minutes}m {seconds}s"
 
 class HTTPView:
-    def __init__(self, wifi_client, access_point, mqtt, system, port, reset_function):
+    def __init__(self, wifi_client, access_point, mqtt, system, port, reset_function, lock):
         self._sensors = []
         self._sta_if = wifi_client
         self._ap = access_point
@@ -28,6 +31,7 @@ class HTTPView:
         self.mqtt = mqtt
         self.port = port
         self.reset_function = reset_function
+        self._lock = lock
 
     def start(self):
         _thread.start_new_thread(self._serve, ())
@@ -46,8 +50,10 @@ class HTTPView:
             print("Could not start webserver: " + str(e))
             return
         while True:
+            cl = None
             try:
                 cl, addr = s.accept()
+                cl.settimeout(5) 
                 request = cl.recv(1024).decode()
 
                 # return crahsdump
@@ -55,79 +61,77 @@ class HTTPView:
                     content = crashdump.read()
                     cl.send(b'HTTP/1.0 200 OK\r\nContent-type: text/html\r\n\r\n')
                     cl.send(content.encode('utf-8'))
-                    cl.close()
                     continue
 
 
                 # Handle AJAX status request
                 if "GET /status" in request:
                     try:
-                        # Safely get sensor data
-                        sensors_data = []
-                        for sensor in self._sensors:
-                            try:
-                                sensor_info = {"name": sensor.name(), "value": sensor.value() or 0}
-                                sensors_data.append(sensor_info)
-                            except Exception as e:
-                                print(f"Error reading sensor: {e}")
-                                sensors_data.append({"name": "unknown", "value": 0})
-                        status = {
-                            "uptime": format_uptime(int(time.ticks_ms() / 1000)),
-                            "sta_if": self._sta_if.isconnected(),
-                            "ap": self._ap.active(),
-                            "regulator_mode": getattr(self.system.regulator, 'mode', 'unknown'),
-                            "pump": self.system.pump.status,  # Send the actual status string
-                            "valve_adjusting": getattr(self.system.valve, 'adjusting', 0),
-                            "valve_opening": getattr(self.system.valve, 'opening', False),
-                            "valve_closing": getattr(self.system.valve, 'closing', False),
-                            "valve_position": getattr(self.system.valve, 'position', 0),
-                            "mqtt": getattr(self.mqtt, 'connected', False),
-                            "regulation_adjustment": getattr(self.system.regulator, 'regulation_adjustment', 0),
-                            "desired_temp": getattr(self.system.regulator, 'desired_secondary_supply_temp', lambda: 0)(),
-                            "sensors": sensors_data,
-                            "gain": getattr(self.system.regulator, 'gain', 0),
-                            "offset": getattr(self.system.regulator, 'offset', 0),
-                            "proportional_gain": getattr(self.system.regulator, 'proportional_gain', 0),
-                        }
+                        with self._lock:
+                            # Safely get sensor data
+                            sensors_data = []
+                            for sensor in self._sensors:
+                                try:
+                                    sensor_info = {"name": sensor.name(), "value": sensor.value() or 0}
+                                    sensors_data.append(sensor_info)
+                                except Exception as e:
+                                    print(f"Error reading sensor: {e}")
+                                    sensors_data.append({"name": "unknown", "value": 0})
+                            status = {
+                                "uptime": format_uptime(int(time.ticks_ms() / 1000)),
+                                "sta_if": self._sta_if.isconnected(),
+                                "ap": self._ap.active(),
+                                "regulator_mode": getattr(self.system.regulator, 'mode', 'unknown'),
+                                "pump": self.system.pump.status,  # Send the actual status string
+                                "valve_adjusting": getattr(self.system.valve, 'adjusting', 0),
+                                "valve_opening": getattr(self.system.valve, 'opening', False),
+                                "valve_closing": getattr(self.system.valve, 'closing', False),
+                                "valve_position": getattr(self.system.valve, 'position', 0),
+                                "mqtt": getattr(self.mqtt, 'connected', False),
+                                "regulation_adjustment": getattr(self.system.regulator, 'regulation_adjustment', 0),
+                                "desired_temp": getattr(self.system.regulator, 'desired_secondary_supply_temp', lambda: 0)(),
+                                "sensors": sensors_data,
+                                "gain": getattr(self.system.regulator, 'gain', 0),
+                                "offset": getattr(self.system.regulator, 'offset', 0),
+                                "proportional_gain": getattr(self.system.regulator, 'proportional_gain', 0),
+                            }
                         content = json.dumps(status)
                         cl.send(b'HTTP/1.0 200 OK\r\nContent-Type: application/json\r\n\r\n')
                         cl.send(content.encode('utf-8'))
-                        cl.close()
                         continue
                     except Exception as e:
                         print(f"Error in status endpoint: {e}")
                         cl.send(b'HTTP/1.0 500 Internal Server Error\r\n\r\n')
-                        cl.close()
                         continue
-                    continue
 
                 # Parse control requests
-                if 'GET /pump?state=on' in request:
-                    self.system.pump.start()
-                elif 'GET /pump?state=off' in request:
-                    self.system.pump.stop()
-                elif 'GET /valve?state=open' in request:
-                    self.system.valve.open()
-                elif 'GET /valve?state=close' in request:
-                    self.system.valve.close()
-                elif 'GET /regulator?state=auto' in request:
-                    self.system.regulator.set_mode(Regulator.AUTOMATIC)
-                elif 'GET /regulator?state=manual' in request:
-                    self.system.regulator.set_mode(Regulator.MANUAL)
-                elif 'GET /reset' in request:
-                    self.reset_function()
-                elif 'GET /set_curve_gain?state=increase' in request:
-                    self.system.regulator.gain += 0.1
-                elif 'GET /set_curve_gain?state=decrease' in request:
-                    self.system.regulator.gain -= 0.1
-                elif 'GET /set_base_temp?state=increase' in request:
-                    self.system.regulator.offset += 1
-                elif 'GET /set_base_temp?state=decrease' in request:
-                    self.system.regulator.offset -= 1
-                elif 'GET /set_proportional_gain?state=increase' in request:
-                    self.system.regulator.proportional_gain += 0.1
-                elif 'GET /set_proportional_gain?state=decrease' in request:
-                    self.system.regulator.proportional_gain -= 0.1
+                with self._lock:
+                    if 'GET /pump?state=on' in request:
+                        self.system.pump.start()
+                    elif 'GET /pump?state=off' in request:
+                        self.system.pump.stop()
+                    elif 'GET /valve?state=open' in request:
+                        self.system.valve.open()
+                    elif 'GET /valve?state=close' in request:
+                        self.system.valve.close()
+                    elif 'GET /regulator?state=auto' in request:
+                        self.system.regulator.set_mode(Regulator.AUTOMATIC)
+                    elif 'GET /regulator?state=manual' in request:
+                        self.system.regulator.set_mode(Regulator.MANUAL)
+                    elif 'GET /reset' in request:
+                        self.reset_function()
+                    elif 'GET /set_curve_gain?state=increase' in request:
+                        self.system.regulator.gain += 0.1
+                    elif 'GET /set_curve_gain?state=decrease' in request:
+                        self.system.regulator.gain -= 0.1
+                    elif 'GET /set_base_temp?state=increase' in request:
+                        self.system.regulator.offset += 1
+                    elif 'GET /set_base_temp?state=decrease' in request:
+                        self.system.regulator.offset -= 1
+                    elif 'GET /set_proportional_gain?state=increase' in request:
+                        self.system.regulator.proportional_gain += 0.1
+                    elif 'GET /set_proportional_gain?state=decrease' in request:
+                        self.system.regulator.proportional_gain -= 0.1
                 html = """<!DOCTYPE html>
 <html>
 <head>
@@ -188,7 +192,7 @@ button{padding:5px 10px;border:none;border-radius:3px;margin:2px;cursor:pointer;
 <div>Position: <span id="pos">0</span>/150</div>
 <div class="valve-bar"><div class="valve-fill" id="fill"></div></div>
 <button class="open" onclick="sendAction('valve','open')">OPEN</button>
-<button class="close" onclick="sendAction('valve','close')">CLOSE</button></div>
+<button class="close" onclick="sendAction('valve','close')">CLOSE</button>
 </div>
 </div>
 
@@ -260,6 +264,8 @@ setInterval(update,2000);update();
 </html>"""
                 cl.send(b'HTTP/1.0 200 OK\r\nContent-type: text/html\r\n\r\n')
                 cl.send(html.encode('utf-8'))
-                cl.close()
             except Exception as e:
                 print("HTTP Error:", e)
+            finally:
+                if cl:
+                    cl.close()
